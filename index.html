@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Zakázky</title>
+<meta name="theme-color" content="#1f5fae">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Zakázky">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<style>
+/* Layout: pracovní nástroj — horní lišta (prostor + pohledy), vlevo seznam, vpravo karta; na mobilu jedno pod druhým */
+:root{
+  --bg:#f3f5f7; --panel:#ffffff; --line:#dde2e8; --line-2:#c9d0d9;
+  --fg:#18212b; --muted:#5d6977; --soft:#eef1f4;
+  --accent:#1f5fae; --accent-fg:#ffffff;
+  --fve:#d98a0b; --fve-bg:#fdf1dc; --lps:#5a4fcf; --lps-bg:#ebe9fb; --oth:#5d6977; --oth-bg:#eceff2;
+  --ok:#2f8a4a; --warn:#b4570b; --bad:#c23b32;
+  --f-head:"Barlow Semi Condensed","Barlow",system-ui,sans-serif;
+  --f-body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  --r:8px; color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#12171d; --panel:#1a2129; --line:#2a333d; --line-2:#3a4552;
+  --fg:#e6ebf0; --muted:#97a3b0; --soft:#222a33;
+  --accent:#5b9bea; --accent-fg:#0d1622;
+  --fve:#f0a93a; --fve-bg:#3a2c12; --lps:#9b93f0; --lps-bg:#28264a; --oth:#a3adb8; --oth-bg:#262e37;
+  --ok:#5cc07a; --warn:#e89a4a; --bad:#ec6a60; color-scheme:dark}}
+*{box-sizing:border-box}
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.45}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--panel)}
+button,input,select,textarea{font:inherit;color:inherit}
+input,select,textarea{font-size:16px}
+a{color:var(--accent)}
+[hidden]{display:none!important}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mono{font-family:var(--f-mono);font-size:.86em}
+.muted{color:var(--muted)}
+
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--panel);border-bottom:1px solid var(--line);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:10px;
+  display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap}
+.brand{font-family:var(--f-head);font-weight:700;font-size:20px;display:flex;align-items:center;gap:6px}
+.brand svg{width:22px;height:22px;color:var(--fve)}
+.ws-select{font-family:var(--f-head);font-weight:700;font-size:17px;border:1px solid var(--line-2);background:var(--bg);border-radius:var(--r);padding:5px 8px;max-width:220px}
+.tabs{display:flex;gap:4px;background:var(--soft);padding:3px;border-radius:999px}
+.tabs button{border:0;background:none;padding:6px 13px;border-radius:999px;cursor:pointer;font-weight:600;color:var(--muted)}
+.tabs button[aria-pressed="true"]{background:var(--panel);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.top .spacer{flex:1}
+.sync{font-size:12px;color:var(--muted)}
+@media (max-width:620px){.top .spacer,.sync{display:none}.tabs{order:5;width:100%;justify-content:space-between}.tabs button{flex:1}}
+
+.btn{border:1px solid var(--line-2);background:var(--panel);padding:7px 12px;border-radius:var(--r);cursor:pointer;font-weight:600;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;text-decoration:none;color:var(--fg)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.btn.sm{padding:4px 9px;font-size:13px}
+.btn.ghost{border-color:transparent;background:none}
+.btn.danger{color:var(--bad)}
+.btn:disabled{opacity:.55;cursor:default}
+.icon-btn{border:0;background:none;cursor:pointer;color:var(--muted);padding:4px 6px;border-radius:6px}
+.icon-btn:hover{background:var(--soft);color:var(--fg)}
+
+main{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px 40px;max-width:1360px;margin:0 auto}
+.split{display:grid;grid-template-columns:340px minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:860px){.split{grid-template-columns:minmax(0,1fr)}.split.detail-open .list-col{display:none}.split:not(.detail-open) .detail-col{display:none}}
+@media (min-width:861px){.back-btn{display:none!important}}
+
+.list-col{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.list-tools{padding:12px;display:grid;gap:8px;border-bottom:1px solid var(--line)}
+.search{width:100%;padding:8px 10px;border:1px solid var(--line-2);border-radius:var(--r);background:var(--bg)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line-2);background:none;border-radius:999px;padding:3px 10px;font-size:13px;font-weight:600;cursor:pointer;color:var(--muted)}
+.chip[aria-pressed="true"]{background:var(--fg);color:var(--panel);border-color:var(--fg)}
+.job-list{list-style:none;margin:0;padding:0;max-height:calc(100vh - 230px);overflow:auto}
+@media (max-width:860px){.job-list{max-height:none}}
+.job-item{display:grid;grid-template-columns:4px minmax(0,1fr);border-bottom:1px solid var(--line);cursor:pointer}
+.job-item:hover,.job-item[aria-current="true"]{background:var(--soft)}
+.job-item .stripe{background:var(--accent)}
+.job-item.t-FVE .stripe{background:var(--fve)} .job-item.t-LPS .stripe{background:var(--lps)} .job-item.t-Ostatní .stripe{background:var(--oth)}
+.job-item .body{padding:10px 12px;min-width:0}
+.job-item .name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.job-item .meta{font-size:13px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.badge{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:1px 7px;border-radius:4px;background:var(--oth-bg);color:var(--oth)}
+.badge.FVE{background:var(--fve-bg);color:var(--fve)} .badge.LPS{background:var(--lps-bg);color:var(--lps)}
+.status{font-size:12px;font-weight:600;padding:1px 8px;border-radius:999px;border:1px solid var(--line-2);color:var(--muted)}
+.status.s-Hotovo{color:var(--ok);border-color:var(--ok)}
+.status.s-Montáž,.status.s-Revize,.status.s-Čeká{color:var(--warn);border-color:var(--warn)}
+.empty{padding:28px 16px;text-align:center;color:var(--muted)}
+
+.detail-col{min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px}
+.job-head{padding:16px 18px;border-bottom:1px solid var(--line);display:grid;gap:10px}
+.job-head .row1{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.job-title{font-family:var(--f-head);font-weight:700;font-size:26px;line-height:1.1;border:1px solid transparent;background:none;padding:2px 4px;margin-left:-5px;border-radius:6px;flex:1;min-width:200px}
+.job-title:hover,.job-title:focus{border-color:var(--line-2)}
+.fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px 14px}
+.field{display:grid;gap:3px;min-width:0}
+.field label,.lbl{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.field input,.field select,.field textarea{width:100%;padding:7px 9px;border:1px solid var(--line-2);border-radius:var(--r);background:var(--bg);min-width:0}
+.field textarea{resize:vertical;min-height:70px}
+.with-act{display:flex;gap:6px}
+.with-act input{flex:1}
+.quick{display:flex;gap:8px;flex-wrap:wrap}
+.quick .btn{font-size:13px}
+.sections{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;padding:16px 18px}
+@media (max-width:1100px){.sections{grid-template-columns:minmax(0,1fr)}}
+.sec{display:grid;gap:8px;align-content:start;min-width:0}
+.sec h3{font-family:var(--f-head);font-size:16px;font-weight:700;margin:0;display:flex;align-items:center;gap:8px;letter-spacing:.02em;text-transform:uppercase}
+.sec h3 .count{font-family:var(--f-body);font-size:12px;color:var(--muted);font-weight:600;text-transform:none;letter-spacing:0}
+.items{display:grid;gap:6px}
+.it{border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;display:grid;gap:4px;min-width:0;background:var(--panel)}
+.it .ln{display:flex;gap:8px;align-items:flex-start;min-width:0}
+.it .grow{flex:1;min-width:0;overflow-wrap:anywhere}
+.it .sub{font-size:12px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.it.done .grow{text-decoration:line-through;color:var(--muted)}
+.it.overdue .due{color:var(--bad);font-weight:600}
+.it pre{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--f-body);margin:0;font-size:14px;max-height:220px;overflow:auto}
+.add-form{display:grid;gap:6px;border:1px dashed var(--line-2);border-radius:var(--r);padding:8px}
+.add-form .r{display:flex;gap:6px;flex-wrap:wrap}
+.add-form input,.add-form textarea,.add-form select{padding:6px 8px;border:1px solid var(--line-2);border-radius:6px;background:var(--bg);min-width:0}
+.add-form textarea{width:100%;min-height:60px;resize:vertical}
+.add-form .r input[type=text],.add-form .r input[type=email],.add-form .r input[type=password]{flex:1 1 160px}
+input[type=checkbox]{width:17px;height:17px;accent-color:var(--accent);margin-top:2px;flex:none}
+.hint{font-size:12px;color:var(--muted)}
+.job-foot{padding:12px 18px;border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:grid;gap:14px}
+.panel h2{font-family:var(--f-head);margin:0;font-size:22px}
+.grp h4{margin:0 0 6px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:16px;align-items:start}
+
+.cal-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.cal-head h2{min-width:180px;text-transform:capitalize}
+.cal-wrap{overflow-x:auto}
+.cal{display:grid;grid-template-columns:repeat(7,minmax(90px,1fr));border-top:1px solid var(--line);border-left:1px solid var(--line);min-width:640px}
+.cal .dow{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:6px 8px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--soft)}
+.cal .day{min-height:92px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:4px;display:grid;align-content:start;gap:3px}
+.cal .day.out{background:var(--bg);color:var(--muted)}
+.cal .day .dn{font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;padding:0 3px}
+.cal .day.today .dn{background:var(--accent);color:var(--accent-fg);border-radius:999px;width:fit-content;padding:0 7px}
+.ev{font-size:12px;line-height:1.25;padding:2px 5px;border-radius:4px;background:var(--soft);color:var(--fg);border-left:3px solid var(--accent);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.ev.FVE{background:var(--fve-bg);border-color:var(--fve)} .ev.LPS{background:var(--lps-bg);border-color:var(--lps)} .ev.Ostatní{background:var(--oth-bg);border-color:var(--oth)}
+.ev.task{background:none;border-left-style:dashed;color:var(--muted)}
+.feed{display:grid;gap:8px;border:1px solid var(--line);border-radius:var(--r);padding:12px;background:var(--soft)}
+.feed p{margin:0;font-size:13px;color:var(--muted);max-width:72ch}
+.feed code{font-family:var(--f-mono);font-size:12px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px;overflow-wrap:anywhere;display:block}
+
+/* přihlášení */
+.auth{min-height:calc(100vh - 40px);display:grid;place-items:center;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:24px}
+.auth-card{width:min(400px,100%);background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:24px;display:grid;gap:14px}
+.auth-card h1{font-family:var(--f-head);font-size:30px;margin:0;display:flex;align-items:center;gap:8px}
+.auth-card h1 svg{width:28px;height:28px;color:var(--fve)}
+.auth-card p{margin:0;color:var(--muted)}
+.auth-card form{display:grid;gap:10px}
+.auth-card .btn{justify-content:center;padding:10px}
+.err{color:var(--bad);font-size:14px;font-weight:600}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--panel);padding:9px 16px;border-radius:999px;font-weight:600;font-size:14px;z-index:20;box-shadow:0 4px 18px rgba(0,0,0,.25);max-width:calc(100% - 32px);text-align:center}
+.confirm{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:13px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<section class="auth" id="auth" hidden>
+  <div class="auth-card">
+    <h1><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>Zakázky</h1>
+    <div class="tabs" role="tablist">
+      <button id="auth-tab-in" aria-pressed="true" type="button">Přihlásit</button>
+      <button id="auth-tab-up" aria-pressed="false" type="button">Nový účet</button>
+    </div>
+    <p id="auth-text">Přihlas se e-mailem a heslem.</p>
+    <form id="auth-form">
+      <div class="field"><label for="a-email">E-mail</label><input id="a-email" type="email" autocomplete="username" required></div>
+      <div class="field"><label for="a-pass">Heslo</label><input id="a-pass" type="password" autocomplete="current-password" minlength="8" required></div>
+      <div class="err" id="a-err" hidden></div>
+      <button class="btn primary" id="a-submit">Přihlásit</button>
+    </form>
+  </div>
+</section>
+
+<div id="shell" hidden>
+<header class="top">
+  <div class="brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg></div>
+  <select class="ws-select" id="ws-select" aria-label="Prostor"></select>
+  <nav class="tabs" aria-label="Pohled">
+    <button data-view="jobs" aria-pressed="true" id="tab-jobs">Zakázky</button>
+    <button data-view="tasks" aria-pressed="false">Úkoly</button>
+    <button data-view="cal" aria-pressed="false">Kalendář</button>
+    <button data-view="settings" aria-pressed="false">Nastavení</button>
+  </nav>
+  <span class="spacer"></span>
+  <span class="sync" id="sync"></span>
+  <button class="btn primary" id="new-job">+ Nová</button>
+</header>
+<main id="app"></main>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+"use strict";
+const SUPABASE_URL = "https://mkfnxysnamantwyftjbk.supabase.co";
+const SUPABASE_KEY = "sb_publishable_H2yVyVYVJfr9dyWFdmXWJw_fq-TQgiN";
+const DEVICE = Math.random().toString(36).slice(2,10);
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true } });
+
+const KIND = {
+  fve: { item:"Zakázka", items:"Zakázky", nouns:["zakázka","zakázky","zakázek"], types:["FVE","LPS","Ostatní"], statuses:["Poptávka","Nabídka","Objednáno","Montáž","Revize","Hotovo","Zrušeno"], closed:["Hotovo","Zrušeno"],
+    info:"FVE: výkon kWp, panely, střídač, baterie, distributor, č. žádosti… / LPS: třída LPS, počet svodů, zemnič, revize do…", contact:true },
+  general: { item:"Projekt", items:"Projekty", nouns:["projekt","projekty","projektů"], types:[], statuses:["Rozpracováno","Čeká","Hotovo"], closed:["Hotovo"],
+    info:"Popis, co je potřeba vědět…", contact:true }
+};
+const S = {
+  user:null, email:"", workspaces:[], ws:null, members:[], jobs:new Map(), loaded:false, channel:null,
+  view:"jobs", selected:null, filterType:"vše", filterOpen:true, q:"",
+  calMonth:(()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth(),1);})(), includeTasks:true, confirmDel:false, confirmWsDel:false
+};
+const LS = { get(k){try{return localStorage.getItem(k)}catch(e){return null}}, set(k,v){try{localStorage.setItem(k,v)}catch(e){}} };
+S.view = LS.get("crm.view") || "jobs";
+
+const $ = (s,r=document)=>r.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+const iso = d => d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+const todayISO = () => iso(new Date());
+const fmtDate = s => { if(!s) return ""; const [y,m,d]=s.split("-"); return `${+d}. ${+m}. ${y}`; };
+const fmtDT = ts => { if(!ts) return ""; const d=new Date(ts); return `${d.getDate()}. ${d.getMonth()+1}. ${d.getFullYear()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; };
+const isUrl = s => /^https?:\/\//i.test(String(s||"").trim());
+const mapLink = j => j.mapUrl && isUrl(j.mapUrl) ? j.mapUrl.trim() : (j.address ? "https://mapy.cz/zakladni?q="+encodeURIComponent(j.address) : "");
+const K = () => KIND[S.ws?.kind] || KIND.general;
+const plural = (n,[a,b,c]) => n===1?a:(n>=2&&n<=4)?b:c;
+const myRole = () => (S.members.find(m=>m.email===S.email)||{}).role || "editor";
+const canManage = () => ["owner","admin"].includes(myRole());
+
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true,2600); }
+async function copy(text,label="Zkopírováno"){
+  try{ await navigator.clipboard.writeText(text); toast(label); }
+  catch(e){ const ta=document.createElement("textarea"); ta.value=text; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy"); toast(label);}catch(_){toast("Označ text a zkopíruj ručně");} ta.remove(); }
+}
+function setSync(t){ $("#sync").textContent=t; }
+
+/* ================= přihlášení ================= */
+let authMode = "in";
+function setAuthMode(m){
+  authMode=m; $("#auth-tab-in").setAttribute("aria-pressed",String(m==="in")); $("#auth-tab-up").setAttribute("aria-pressed",String(m==="up"));
+  $("#a-submit").textContent = m==="in" ? "Přihlásit" : "Založit účet";
+  $("#auth-text").textContent = m==="in" ? "Přihlas se e-mailem a heslem." : "Založ si účet. Dostaneš vlastní prostor na úkoly a do dalších prostorů tě mohou pozvat ostatní.";
+  $("#a-pass").autocomplete = m==="in" ? "current-password" : "new-password";
+  $("#a-err").hidden=true;
+}
+$("#auth-tab-in").onclick=()=>setAuthMode("in");
+$("#auth-tab-up").onclick=()=>setAuthMode("up");
+$("#auth-form").addEventListener("submit", async e=>{
+  e.preventDefault();
+  const email=$("#a-email").value.trim().toLowerCase(), password=$("#a-pass").value, err=$("#a-err"), btn=$("#a-submit");
+  err.hidden=true; btn.disabled=true;
+  try{
+    if (authMode==="up"){
+      const r = await fetch(SUPABASE_URL+"/functions/v1/accounts",{method:"POST",headers:{"Content-Type":"application/json","apikey":SUPABASE_KEY,"Authorization":"Bearer "+SUPABASE_KEY},body:JSON.stringify({action:"register",email,password})});
+      const j = await r.json().catch(()=>({}));
+      if (!r.ok) throw new Error(j.error || "Účet se nepodařilo založit.");
+    }
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(/invalid/i.test(error.message) ? "Špatný e-mail nebo heslo." : error.message);
+  }catch(x){ err.textContent=x.message; err.hidden=false; }
+  btn.disabled=false;
+});
+
+sb.auth.onAuthStateChange((ev, session)=>{
+  const u = session?.user || null;
+  if (u && (!S.user || S.user.id!==u.id)) { S.user=u; S.email=(u.email||"").toLowerCase(); start(); }
+  if (!u) { S.user=null; showAuth(); }
+});
+function showAuth(){ $("#shell").hidden=true; $("#auth").hidden=false; if(S.channel){ sb.removeChannel(S.channel); S.channel=null; } }
+
+/* ================= prostory ================= */
+async function start(){
+  $("#auth").hidden=true; $("#shell").hidden=false; setSync("Načítám…");
+  await loadWorkspaces();
+  const want = LS.get("crm.ws");
+  const ws = S.workspaces.find(w=>w.id===want) || S.workspaces.find(w=>w.kind==="fve") || S.workspaces[0];
+  if (ws) await openWorkspace(ws.id); else { S.ws=null; S.loaded=true; render(); }
+}
+async function loadWorkspaces(){
+  const { data, error } = await sb.from("workspaces").select("id,name,kind,owner_email,feed_token,created_at").order("created_at");
+  if (error){ toast("Nepodařilo se načíst prostory"); return; }
+  S.workspaces = data||[];
+  $("#ws-select").innerHTML = S.workspaces.map(w=>`<option value="${w.id}">${esc(w.name)}</option>`).join("") + `<option value="__new">+ Nový prostor…</option>`;
+}
+async function openWorkspace(id){
+  S.ws = S.workspaces.find(w=>w.id===id); if(!S.ws) return;
+  LS.set("crm.ws", id); $("#ws-select").value=id;
+  S.jobs=new Map(); S.selected=null; S.loaded=false; S.filterType="vše"; S.confirmWsDel=false; render();
+  const [jr, mr] = await Promise.all([
+    sb.from("jobs").select("id,data,updated_at,updated_by").eq("workspace_id", id),
+    sb.from("workspace_members").select("email,role,created_at").eq("workspace_id", id).order("created_at")
+  ]);
+  if (jr.error){ toast("Nepodařilo se načíst data"); }
+  (jr.data||[]).forEach(r=>S.jobs.set(r.id, normalize(r)));
+  S.members = mr.data||[];
+  S.loaded=true; setSync("Uloženo"); render();
+  if (S.channel) sb.removeChannel(S.channel);
+  S.channel = sb.channel("jobs-"+id).on("postgres_changes",{event:"*",schema:"public",table:"jobs",filter:"workspace_id=eq."+id}, p=>{
+    if (p.eventType==="DELETE"){ const oid=p.old?.id; if(oid && S.jobs.has(oid)){ S.jobs.delete(oid); if(S.selected===oid) S.selected=null; softRender(); } return; }
+    const r=p.new; if(!r || r.workspace_id!==S.ws?.id) return;
+    const w=writing.get(r.id); if (w && (w.busy||w.next)) return;
+    if (r.data && r.data._dev===DEVICE) return; // vlastní změna z tohoto zařízení už je zobrazená
+    S.jobs.set(r.id, normalize(r)); softRender();
+  }).subscribe();
+}
+function normalize(r){ return { ...blank(), ...(r.data||{}), _updated:r.updated_at, _by:r.updated_by }; }
+function blank(type){
+  const k=K();
+  return { name:"Nov"+(S.ws?.kind==="fve"?"á zakázka":"ý projekt"), type: type || k.types[0] || "", status:k.statuses[0], client:"", phone:"", email:"", address:"", mapUrl:"", folder:"", info:"",
+    tasks:[], notes:[], mails:[], links:[], events:[], created:Date.now() };
+}
+$("#ws-select").addEventListener("change", async e=>{
+  if (e.target.value==="__new"){ e.target.value=S.ws?.id||""; S.view="settings"; S.newWs=true; render(); setTimeout(()=>$("#nws-name")?.focus(),30); return; }
+  await openWorkspace(e.target.value);
+});
+
+/* ================= ukládání ================= */
+const writing=new Map();
+function save(id){
+  const job=S.jobs.get(id); if(!job||!S.ws) return;
+  const w=writing.get(id)||{busy:false,next:null}; writing.set(id,w);
+  const { _updated, _by, ...data } = job;
+  w.next = { id, workspace_id:S.ws.id, data: JSON.parse(JSON.stringify({...data, _dev:DEVICE})) };
+  if(!w.busy) flush(id);
+}
+async function flush(id){
+  const w=writing.get(id); if(!w||!w.next) return;
+  w.busy=true; const row=w.next; w.next=null; setSync("Ukládám…");
+  const { error } = await sb.from("jobs").upsert(row);
+  if (error){ setSync("Neuloženo"); toast("Změnu se nepodařilo uložit. Zkontroluj připojení."); if(!w.next) w.next=row; w.busy=false; setTimeout(()=>flush(id),4000); return; }
+  setSync("Uloženo"); w.busy=false; if(w.next) flush(id); else writing.delete(id);
+}
+const deb=new Map();
+function saveSoon(id,ms=700){ clearTimeout(deb.get(id)); deb.set(id,setTimeout(()=>save(id),ms)); }
+async function removeJob(id){
+  S.jobs.delete(id); S.selected=null; S.confirmDel=false; render();
+  const { error } = await sb.from("jobs").delete().eq("id",id);
+  toast(error ? "Smazání selhalo" : "Smazáno");
+}
+function softRender(){ const ae=document.activeElement; if (ae && ae.matches && ae.matches("input,textarea,select") && ae.closest("#app")) return; render(); }
+
+/* ================= výpočty ================= */
+function sortedJobs(){
+  const k=K(); let arr=[...S.jobs.entries()].map(([id,j])=>({id,...j}));
+  if (S.filterType!=="vše") arr=arr.filter(j=>j.type===S.filterType);
+  if (S.filterOpen) arr=arr.filter(j=>!k.closed.includes(j.status));
+  if (S.q){ const q=S.q.toLowerCase(); arr=arr.filter(j=>[j.name,j.client,j.address,j.info,j.phone,j.email,...(j.notes||[]).map(n=>n.text),...(j.tasks||[]).map(t=>t.text)].join(" ").toLowerCase().includes(q)); }
+  return arr.sort((a,b)=>String(b._updated||"").localeCompare(String(a._updated||"")) || (b.created||0)-(a.created||0));
+}
+function allEvents(){
+  const out=[];
+  for (const [id,j] of S.jobs){
+    for (const e of j.events||[]) out.push({kind:"ev",jobId:id,job:j,...e});
+    for (const t of j.tasks||[]) if(t.due && !t.done) out.push({kind:"task",jobId:id,job:j,id:t.id,title:t.text,date:t.due});
+  }
+  return out.sort((a,b)=>(a.date+(a.time||"99")).localeCompare(b.date+(b.time||"99")));
+}
+
+/* ================= render ================= */
+function render(){
+  if (!S.user) return;
+  const k=K();
+  $("#tab-jobs").textContent=k.items;
+  $("#new-job").hidden = !S.ws || S.view==="settings";
+  document.querySelectorAll("header .tabs button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.view===S.view)));
+  const app=$("#app");
+  if (!S.ws && S.view!=="settings"){ app.innerHTML=`<div class="panel"><div class="empty">Nemáš zatím žádný prostor. Založ si ho v Nastavení.</div></div>`; return; }
+  app.innerHTML = S.view==="tasks"?renderTasks() : S.view==="cal"?renderCal() : S.view==="settings"?renderSettings() : renderJobs();
+}
+
+function renderJobs(){
+  const k=K(), list=sortedJobs();
+  const items = !S.loaded ? `<li class="empty">Načítám…</li>`
+    : list.length===0 ? `<li class="empty">${S.jobs.size?"Nic neodpovídá filtru.":`Zatím tu nic není.<br>Začni tlačítkem <b>+ Nová</b>.`}</li>`
+    : list.map(j=>{ const open=(j.tasks||[]).filter(x=>!x.done).length; const t=todayISO();
+        const ev=(j.events||[]).filter(e=>e.date>=t).sort((a,b)=>(a.date+(a.time||"")).localeCompare(b.date+(b.time||"")))[0];
+        return `<li class="job-item t-${esc(j.type)}" data-open="${j.id}" aria-current="${S.selected===j.id}" tabindex="0"><span class="stripe"></span><div class="body">
+          <div class="name">${esc(j.name)}</div>
+          <div class="meta">${j.type?`<span class="badge ${esc(j.type)}">${esc(j.type)}</span>`:""}<span class="status s-${esc(j.status)}">${esc(j.status)}</span>${j.client?`<span>${esc(j.client)}</span>`:""}</div>
+          ${open||ev?`<div class="meta">${open?`<span>${open} ${plural(open,["úkol","úkoly","úkolů"])}</span>`:""}${ev?`<span>▸ ${fmtDate(ev.date)} ${esc(ev.title)}</span>`:""}</div>`:""}
+        </div></li>`; }).join("");
+  const sel=S.selected && S.jobs.get(S.selected);
+  return `<div class="split ${sel?"detail-open":""}">
+    <aside class="list-col"><div class="list-tools">
+      <input class="search" id="q" type="search" placeholder="Hledat…" value="${esc(S.q)}">
+      <div class="chips">${k.types.length?["vše",...k.types].map(t=>`<button class="chip" data-ftype="${t}" aria-pressed="${S.filterType===t}">${t==="vše"?"Vše":t}</button>`).join(""):""}
+      <button class="chip" id="fopen" aria-pressed="${S.filterOpen}">Jen rozpracované</button></div>
+    </div><ul class="job-list">${items}</ul></aside>
+    <section class="detail-col">${sel?renderDetail(S.selected,sel):`<div class="card empty">Vyber vlevo, nebo založ nov${S.ws.kind==="fve"?"ou zakázku":"ý projekt"}.</div>`}</section>
+  </div>`;
+}
+
+function renderDetail(id,j){
+  const k=K(), t=todayISO(), ml=mapLink(j);
+  const tasks=[...(j.tasks||[])].sort((a,b)=>(a.done-b.done)||(a.due||"9").localeCompare(b.due||"9"));
+  const events=[...(j.events||[])].sort((a,b)=>(a.date+(a.time||"")).localeCompare(b.date+(b.time||"")));
+  return `<article class="card" data-job="${id}">
+    <div class="job-head">
+      <div class="row1"><button class="btn sm back-btn" data-act="back">← Zpět</button>${j.type?`<span class="badge ${esc(j.type)}">${esc(j.type)}</span>`:""}
+        <input class="job-title" id="f-name" data-f="name" value="${esc(j.name)}" aria-label="Název"></div>
+      <div class="quick">
+        ${ml?`<a class="btn" href="${esc(ml)}" target="_blank" rel="noopener">Mapa ↗</a>`:""}
+        ${j.folder?`<button class="btn" data-copy="${esc(j.folder)}" data-label="Cesta ke složce zkopírována">Kopírovat cestu ke složce</button>`:""}
+        ${j.phone?`<a class="btn" href="tel:${esc(j.phone.replace(/\s/g,""))}">Volat ${esc(j.phone)}</a>`:""}
+        ${j.email?`<a class="btn" href="mailto:${esc(j.email)}">Napsat e-mail</a>`:""}
+      </div>
+      <div class="fields">
+        ${k.types.length?`<div class="field"><label for="f-type">Typ</label><select id="f-type" data-f="type">${k.types.map(x=>`<option ${x===j.type?"selected":""}>${x}</option>`).join("")}</select></div>`:""}
+        <div class="field"><label for="f-status">Stav</label><select id="f-status" data-f="status">${[...new Set([...k.statuses,j.status])].map(x=>`<option ${x===j.status?"selected":""}>${esc(x)}</option>`).join("")}</select></div>
+        <div class="field"><label for="f-client">${S.ws.kind==="fve"?"Klient":"Kontakt"}</label><input id="f-client" data-f="client" value="${esc(j.client)}" placeholder="Jméno / firma"></div>
+        <div class="field"><label for="f-phone">Telefon</label><input id="f-phone" data-f="phone" value="${esc(j.phone)}" inputmode="tel" placeholder="+420 …"></div>
+        <div class="field"><label for="f-email">E-mail</label><input id="f-email" data-f="email" value="${esc(j.email)}" inputmode="email"></div>
+        <div class="field"><label for="f-address">Adresa místa</label><input id="f-address" data-f="address" value="${esc(j.address)}" placeholder="Ulice, obec"></div>
+        <div class="field"><label for="f-mapUrl">Odkaz na mapu</label><input id="f-mapUrl" data-f="mapUrl" value="${esc(j.mapUrl)}" placeholder="mapy.cz / Google Maps (jinak z adresy)"></div>
+        <div class="field"><label for="f-folder">Složka v PC</label><div class="with-act"><input id="f-folder" class="mono" data-f="folder" value="${esc(j.folder)}" placeholder="D:\\Zakázky\\2026\\…"><button class="btn sm" data-copy-field="folder">Kopírovat</button></div></div>
+      </div>
+      <div class="field"><label for="f-info">${S.ws.kind==="fve"?"Technické info":"Popis"}</label><textarea id="f-info" data-f="info" placeholder="${esc(k.info)}">${esc(j.info)}</textarea></div>
+    </div>
+    <div class="sections">
+      <section class="sec"><h3>Úkoly <span class="count">${tasks.filter(x=>!x.done).length} otevřené</span></h3>
+        <form class="add-form" data-add="task"><div class="r"><input type="text" id="new-task" name="text" placeholder="Co je potřeba udělat" required><input type="date" name="due" aria-label="Termín"><button class="btn sm primary">Přidat</button></div></form>
+        <div class="items">${tasks.map(x=>taskRow(x,id)).join("")||`<div class="hint">Žádné úkoly.</div>`}</div></section>
+      <section class="sec"><h3>Termíny <span class="count">jdou do kalendáře</span></h3>
+        <form class="add-form" data-add="event"><div class="r"><input type="text" id="new-ev" name="title" placeholder="${S.ws.kind==="fve"?"Obhlídka, montáž, revize…":"Schůzka, termín…"}" required></div>
+          <div class="r"><input type="date" name="date" required value="${t}"><input type="time" name="time" aria-label="Čas"><select name="dur" aria-label="Délka"><option value="60">1 h</option><option value="120">2 h</option><option value="240">4 h</option><option value="480">8 h</option></select><button class="btn sm primary">Přidat</button></div></form>
+        <div class="items">${events.map(e=>`<div class="it ${e.date<t?"done":""}"><div class="ln"><span class="grow"><b class="mono">${fmtDate(e.date)}${e.time?" "+esc(e.time):""}</b> ${esc(e.title)}</span><button class="icon-btn" data-del="events:${e.id}" aria-label="Smazat">✕</button></div></div>`).join("")||`<div class="hint">Žádné termíny.</div>`}</div></section>
+      <section class="sec"><h3>Poznámky</h3>
+        <form class="add-form" data-add="note"><textarea id="new-note" name="text" placeholder="Co jsme domluvili, co je na místě, co chybí…" required></textarea><div class="r"><button class="btn sm primary">Uložit poznámku</button></div></form>
+        <div class="items">${[...(j.notes||[])].sort((a,b)=>b.ts-a.ts).map(n=>`<div class="it"><div class="ln"><pre class="grow">${esc(n.text)}</pre><button class="icon-btn" data-del="notes:${n.id}" aria-label="Smazat">✕</button></div><div class="sub">${fmtDT(n.ts)}${n.by?` · ${esc(n.by)}`:""}</div></div>`).join("")}</div></section>
+      <section class="sec"><h3>E-maily</h3>
+        <form class="add-form" data-add="mail"><div class="r"><input type="text" name="from" placeholder="Od"><input type="text" name="subject" placeholder="Předmět"></div>
+          <textarea id="new-mail" name="body" placeholder="Vlož text e-mailu" required></textarea>
+          <div class="r"><input type="text" name="url" placeholder="Odkaz na e-mail v poště (nepovinné)"><button class="btn sm primary">Uložit e-mail</button></div></form>
+        <div class="items">${[...(j.mails||[])].sort((a,b)=>b.ts-a.ts).map(m=>`<details class="it"><summary class="ln" style="cursor:pointer"><span class="grow"><b>${esc(m.subject||"(bez předmětu)")}</b>${m.from?` <span class="muted">· ${esc(m.from)}</span>`:""}</span><button class="icon-btn" data-del="mails:${m.id}" aria-label="Smazat">✕</button></summary>
+          <div class="sub">${fmtDT(m.ts)}${m.url?` · <a href="${esc(m.url)}" target="_blank" rel="noopener">otevřít v poště ↗</a>`:""}</div><pre>${esc(m.body)}</pre><div><button class="btn sm" data-copy="${esc(m.body)}">Kopírovat text</button></div></details>`).join("")}</div></section>
+      <section class="sec"><h3>Odkazy a složky</h3>
+        <form class="add-form" data-add="link"><div class="r"><input type="text" id="new-link" name="label" placeholder="Popis (projekt, fotky, nabídka…)"><input type="text" name="url" placeholder="https://… nebo D:\\cesta\\ke\\složce" required><button class="btn sm primary">Přidat</button></div></form>
+        <div class="items">${(j.links||[]).map(l=>`<div class="it"><div class="ln"><span class="grow"><b>${esc(l.label||"Odkaz")}</b><br><span class="mono muted">${esc(l.url)}</span></span>${isUrl(l.url)?`<a class="btn sm" href="${esc(l.url)}" target="_blank" rel="noopener">Otevřít ↗</a>`:`<button class="btn sm" data-copy="${esc(l.url)}" data-label="Cesta zkopírována">Kopírovat</button>`}<button class="icon-btn" data-del="links:${l.id}" aria-label="Smazat">✕</button></div></div>`).join("")}</div>
+        <div class="hint">Složky v PC prohlížeč z webu neotevře, tlačítko cestu zkopíruje. Vlož ji do adresního řádku Průzkumníku.</div></section>
+    </div>
+    <div class="job-foot"><span class="hint">Upraveno ${fmtDT(j._updated)}${j._by?" · "+esc(j._by):""}</span><span style="flex:1"></span>
+      ${S.confirmDel?`<span class="confirm">Opravdu smazat? <button class="btn sm danger" data-act="del-yes">Smazat</button><button class="btn sm" data-act="del-no">Ne</button></span>`:`<button class="btn sm ghost danger" data-act="del">Smazat</button>`}</div>
+  </article>`;
+}
+function taskRow(x, jobId, showJob){
+  const t=todayISO(), j=S.jobs.get(jobId);
+  return `<div class="it ${x.done?"done":""} ${!x.done&&x.due&&x.due<t?"overdue":""}" data-job="${jobId}">
+    <div class="ln"><input type="checkbox" data-toggle="${x.id}" ${x.done?"checked":""} aria-label="Hotovo"><span class="grow">${esc(x.text)}</span>${showJob?`<button class="btn sm ghost" data-goto="${jobId}">${esc(j.name)} →</button>`:""}<button class="icon-btn" data-del="tasks:${x.id}" aria-label="Smazat">✕</button></div>
+    ${x.due||(showJob&&j.type)?`<div class="sub">${showJob&&j.type?`<span class="badge ${esc(j.type)}">${esc(j.type)}</span>`:""}${x.due?`<span class="due">${fmtDate(x.due)}</span>`:""}</div>`:""}</div>`;
+}
+
+function renderTasks(){
+  const t=todayISO(), rows=[];
+  for (const [id,j] of S.jobs) for (const x of j.tasks||[]) if(!x.done) rows.push({id,x});
+  const g={"Po termínu":[],"Dnes":[],"Další":[],"Bez termínu":[]};
+  rows.forEach(r=>{const d=r.x.due; g[!d?"Bez termínu":d<t?"Po termínu":d===t?"Dnes":"Další"].push(r);});
+  Object.values(g).forEach(a=>a.sort((p,q)=>(p.x.due||"").localeCompare(q.x.due||"")));
+  const jobs=sortedJobsAll();
+  const quick=`<form class="add-form" data-add="quick-task"><div class="r"><input type="text" id="qt-text" name="text" placeholder="Nový úkol…" required><input type="date" name="due" aria-label="Termín">
+    <select name="job" aria-label="${K().item}"><option value="__general">${S.ws.kind==="fve"?"Obecné (bez zakázky)":"Obecné"}</option>${jobs.map(j=>`<option value="${j.id}">${esc(j.name)}</option>`).join("")}</select><button class="btn sm primary">Přidat</button></div></form>`;
+  const body = rows.length===0?`<div class="empty">Žádné otevřené úkoly.</div>` :
+    Object.entries(g).filter(([,a])=>a.length).map(([n,a])=>`<div class="grp"><h4>${n} · ${a.length}</h4><div class="items">${a.map(r=>taskRow(r.x,r.id,true)).join("")}</div></div>`).join("");
+  return `<div class="panel"><h2>Úkoly</h2>${quick}${body}</div>`;
+}
+function sortedJobsAll(){ const k=K(); return [...S.jobs.entries()].map(([id,j])=>({id,...j})).filter(j=>!k.closed.includes(j.status)).sort((a,b)=>a.name.localeCompare(b.name,"cs")); }
+
+function feedUrl(){ return S.ws ? SUPABASE_URL.replace(/^https:/,"webcal:")+"/functions/v1/ics?t="+S.ws.feed_token : ""; }
+function renderCal(){
+  const m=S.calMonth, y=m.getFullYear(), mo=m.getMonth(), first=new Date(y,mo,1), start=new Date(first); start.setDate(1-((first.getDay()+6)%7));
+  const evs=allEvents(), byDay={}; evs.forEach(e=>{ if(e.kind==="task"&&!S.includeTasks) return; (byDay[e.date] ||= []).push(e); });
+  const t=todayISO(); let cells="";
+  for (let i=0;i<42;i++){ const d=new Date(start); d.setDate(start.getDate()+i); if(i===35 && d.getMonth()!==mo) break; const key=iso(d), list=byDay[key]||[];
+    cells+=`<div class="day ${d.getMonth()!==mo?"out":""} ${key===t?"today":""}"><span class="dn">${d.getDate()}</span>${list.slice(0,4).map(e=>`<div class="ev ${esc(e.job.type)} ${e.kind==="task"?"task":""}" data-goto="${e.jobId}" title="${esc(e.job.name)}">${e.time?esc(e.time)+" ":""}${esc(e.title)}</div>`).join("")}${list.length>4?`<span class="hint">+${list.length-4} další</span>`:""}</div>`; }
+  const upcoming=evs.filter(e=>e.date>=t && (e.kind==="ev"||S.includeTasks)).slice(0,12);
+  return `<div class="panel">
+    <div class="cal-head"><button class="btn sm" data-cal="-1" aria-label="Předchozí měsíc">←</button><h2>${esc(first.toLocaleDateString("cs-CZ",{month:"long",year:"numeric"}))}</h2><button class="btn sm" data-cal="1" aria-label="Další měsíc">→</button><button class="btn sm ghost" data-cal="0">Dnes</button><span style="flex:1"></span>
+      <label class="hint" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="inc-tasks" ${S.includeTasks?"checked":""}> úkoly s termínem</label></div>
+    <div class="cal-wrap"><div class="cal">${["Po","Út","St","Čt","Pá","So","Ne"].map(d=>`<div class="dow">${d}</div>`).join("")}${cells}</div></div>
+    ${feedBox()}
+    <div class="grp"><h4>Nejbližší</h4><div class="items">${upcoming.map(e=>`<div class="it"><div class="ln"><span class="grow"><b class="mono">${fmtDate(e.date)}${e.time?" "+esc(e.time):""}</b> ${esc(e.title)} ${e.job.type?`<span class="badge ${esc(e.job.type)}">${esc(e.job.type)}</span>`:""}</span><button class="btn sm ghost" data-goto="${e.jobId}">${esc(e.job.name)} →</button></div>${e.job.address?`<div class="sub">${esc(e.job.address)}</div>`:""}</div>`).join("")||`<div class="hint">Žádné nadcházející termíny.</div>`}</div></div>
+  </div>`;
+}
+function feedBox(){
+  return `<div class="feed"><b>Odběr v Apple Kalendáři</b>
+    <p>Klepni na <b>Přidat do Kalendáře</b> a potvrď odběr. Kalendář si termíny a úkoly s termínem z prostoru „${esc(S.ws.name)}“ sám obnovuje. Na Macu případně Kalendář → Soubor → Nový odběr kalendáře a vlož odkaz.</p>
+    <code>${esc(feedUrl())}</code>
+    <div class="quick"><a class="btn primary" href="${esc(feedUrl())}">Přidat do Kalendáře</a><button class="btn" data-copy="${esc(feedUrl())}" data-label="Odkaz zkopírován">Kopírovat odkaz</button></div>
+    <p>Odkaz nikomu neposílej. Kdo ho má, vidí termíny tohoto prostoru.</p></div>`;
+}
+
+function renderSettings(){
+  const ws=S.ws, man=ws&&canManage(), own=ws&&myRole()==="owner";
+  const members = ws ? `<section class="panel"><h2>Kdo má přístup do „${esc(ws.name)}“</h2>
+    <div class="items">${S.members.map(m=>`<div class="it"><div class="ln"><span class="grow"><b>${esc(m.email)}</b>${m.email===S.email?" <span class=\"muted\">(ty)</span>":""}</span>
+      ${m.role==="owner"?`<span class="status">Vlastník</span>`: man?`<select data-role="${esc(m.email)}" aria-label="Role">${[["admin","Správce"],["editor","Může psát"]].map(([v,l])=>`<option value="${v}" ${m.role===v?"selected":""}>${l}</option>`).join("")}</select><button class="icon-btn" data-rm="${esc(m.email)}" aria-label="Odebrat">✕</button>`:`<span class="status">${m.role==="admin"?"Správce":"Může psát"}</span>`}
+    </div></div>`).join("")}</div>
+    ${man?`<form class="add-form" id="add-member"><div class="lbl">Přidat člověka</div><div class="r"><input type="email" id="am-email" name="email" placeholder="jeho@email.cz" required><select name="role"><option value="editor">Může psát</option><option value="admin">Správce</option></select><button class="btn sm primary">Přidat</button></div>
+      <div class="hint">Ať si na této stránce založí účet se stejným e-mailem (Nový účet). Po přihlášení uvidí tento prostor.</div></form>`:""}
+    ${!own?`<div><button class="btn sm danger" data-act="leave">Opustit prostor</button></div>`:""}
+  </section>` : "";
+  const wsSet = ws && man ? `<section class="panel"><h2>Prostor</h2>
+    <div class="field"><label for="ws-name">Název</label><div class="with-act"><input id="ws-name" value="${esc(ws.name)}"><button class="btn sm" data-act="ws-rename">Uložit</button></div></div>
+    ${feedBox()}
+    <div class="quick"><button class="btn sm" data-act="feed-reset">Vygenerovat nový odkaz na kalendář</button>
+    ${own?(S.confirmWsDel?`<span class="confirm">Smazat prostor i se vším obsahem? <button class="btn sm danger" data-act="ws-del-yes">Smazat</button><button class="btn sm" data-act="ws-del-no">Ne</button></span>`:`<button class="btn sm ghost danger" data-act="ws-del">Smazat prostor</button>`):""}</div>
+  </section>` : "";
+  return `<div class="cols">
+    ${members}${wsSet}
+    <section class="panel"><h2>Nový prostor</h2>
+      <form class="add-form" id="new-ws"><div class="r"><input type="text" id="nws-name" name="name" placeholder="Název, např. Domácí úkoly" required>
+        <select name="kind"><option value="general">Obecné úkoly a projekty</option><option value="fve">Zakázky FVE a LPS</option></select><button class="btn sm primary">Založit</button></div>
+        <div class="hint">Každý prostor má vlastní lidi, úkoly a kalendář.</div></form>
+    </section>
+    <section class="panel"><h2>Můj účet</h2>
+      <div class="hint">Přihlášen jako <b>${esc(S.email)}</b></div>
+      <form class="add-form" id="chpw"><div class="lbl">Změnit heslo</div><div class="r"><input type="password" id="pw1" name="pw" placeholder="Nové heslo (min. 8 znaků)" minlength="8" autocomplete="new-password" required><button class="btn sm primary">Změnit</button></div></form>
+      <div><button class="btn" data-act="logout">Odhlásit</button></div>
+    </section>
+  </div>`;
+}
+
+/* ================= události ================= */
+document.addEventListener("click", async e=>{
+  const el=e.target.closest("button,[data-open],[data-goto],summary"); if(!el || !el.closest("#shell")) return;
+  if (el.matches("header .tabs button")){ S.view=el.dataset.view; LS.set("crm.view",S.view); render(); return; }
+  if (el.id==="new-job"){ const id=uid(); const ft=S.filterType; S.jobs.set(id,{...blank(K().types.includes(ft)?ft:undefined), _updated:new Date().toISOString(), _by:S.email}); S.view="jobs"; S.selected=id; S.q=""; save(id); render(); setTimeout(()=>{const f=$("#f-name"); f&&f.select();},30); return; }
+  if (el.dataset.open){ S.selected=el.dataset.open; S.confirmDel=false; render(); window.scrollTo(0,0); return; }
+  if (el.dataset.goto){ e.stopPropagation(); S.view="jobs"; S.selected=el.dataset.goto; S.confirmDel=false; render(); window.scrollTo(0,0); return; }
+  if (el.dataset.ftype){ S.filterType=el.dataset.ftype; render(); return; }
+  if (el.id==="fopen"){ S.filterOpen=!S.filterOpen; render(); return; }
+  if (el.dataset.copy!==undefined && el.tagName==="BUTTON"){ e.preventDefault(); copy(el.dataset.copy, el.dataset.label); return; }
+  if (el.dataset.copyField){ const v=$("#f-"+el.dataset.copyField).value; if(v) copy(v,"Cesta zkopírována"); return; }
+  if (el.dataset.cal!==undefined){ const n=+el.dataset.cal; S.calMonth = n===0?new Date(new Date().getFullYear(),new Date().getMonth(),1):new Date(S.calMonth.getFullYear(),S.calMonth.getMonth()+n,1); render(); return; }
+  if (el.dataset.rm){ const em=el.dataset.rm; const {error}=await sb.from("workspace_members").delete().eq("workspace_id",S.ws.id).eq("email",em); if(error) return toast("Nepodařilo se odebrat"); S.members=S.members.filter(m=>m.email!==em); render(); toast("Odebráno"); return; }
+  const act=el.dataset.act;
+  if (act==="logout"){ await sb.auth.signOut(); return; }
+  if (act==="leave"){ const {error}=await sb.from("workspace_members").delete().eq("workspace_id",S.ws.id).eq("email",S.email); if(error) return toast("Nepodařilo se"); LS.set("crm.ws",""); start(); return; }
+  if (act==="ws-rename"){ const name=$("#ws-name").value.trim(); if(!name) return; const {error}=await sb.from("workspaces").update({name}).eq("id",S.ws.id); if(error) return toast("Nepodařilo se uložit"); S.ws.name=name; await loadWorkspaces(); $("#ws-select").value=S.ws.id; render(); toast("Uloženo"); return; }
+  if (act==="feed-reset"){ const arr=new Uint8Array(18); crypto.getRandomValues(arr); const tok=[...arr].map(x=>x.toString(16).padStart(2,"0")).join(""); const {error}=await sb.from("workspaces").update({feed_token:tok}).eq("id",S.ws.id); if(error) return toast("Nepodařilo se"); S.ws.feed_token=tok; render(); toast("Nový odkaz připraven, starý přestal fungovat"); return; }
+  if (act==="ws-del"){ S.confirmWsDel=true; render(); return; }
+  if (act==="ws-del-no"){ S.confirmWsDel=false; render(); return; }
+  if (act==="ws-del-yes"){ const {error}=await sb.from("workspaces").delete().eq("id",S.ws.id); if(error) return toast("Smazání selhalo"); LS.set("crm.ws",""); toast("Prostor smazán"); start(); return; }
+  const card=el.closest("[data-job]"), jid=card&&card.dataset.job, job=jid&&S.jobs.get(jid);
+  if (el.dataset.del && job){ e.preventDefault(); const [k,id]=el.dataset.del.split(":"); job[k]=job[k].filter(x=>x.id!==id); save(jid); render(); return; }
+  if (act==="back"){ S.selected=null; render(); return; }
+  if (act==="del"){ S.confirmDel=true; render(); return; }
+  if (act==="del-no"){ S.confirmDel=false; render(); return; }
+  if (act==="del-yes" && jid){ removeJob(jid); return; }
+});
+document.addEventListener("keydown", e=>{ if(e.key==="Enter" && e.target.matches(".job-item")) e.target.click(); });
+document.addEventListener("change", async e=>{
+  const el=e.target;
+  if (el.id==="inc-tasks"){ S.includeTasks=el.checked; render(); return; }
+  if (el.dataset.role){ const {error}=await sb.from("workspace_members").update({role:el.value}).eq("workspace_id",S.ws.id).eq("email",el.dataset.role); if(error){toast("Nepodařilo se změnit roli"); return;} const m=S.members.find(x=>x.email===el.dataset.role); if(m) m.role=el.value; toast("Uloženo"); return; }
+  if (el.dataset.toggle){ const jid=el.closest("[data-job]").dataset.job, job=S.jobs.get(jid), tk=job.tasks.find(x=>x.id===el.dataset.toggle); if(tk){ tk.done=el.checked; save(jid); setTimeout(render, S.view==="tasks"?350:0);} return; }
+  if (el.dataset.f && el.tagName==="SELECT"){ const jid=el.closest("[data-job]").dataset.job; S.jobs.get(jid)[el.dataset.f]=el.value; save(jid); render(); }
+});
+document.addEventListener("input", e=>{
+  const el=e.target;
+  if (el.id==="q"){ S.q=el.value; const pos=el.selectionStart; render(); const q=$("#q"); q.focus(); q.setSelectionRange(pos,pos); return; }
+  if (el.dataset.f && el.tagName!=="SELECT"){ const jid=el.closest("[data-job]").dataset.job; S.jobs.get(jid)[el.dataset.f]=el.value; saveSoon(jid); }
+});
+document.addEventListener("focusout", e=>{ const el=e.target; if(el.dataset&&el.dataset.f&&el.tagName!=="SELECT"){ const jid=el.closest("[data-job]")?.dataset.job; if(jid){ clearTimeout(deb.get(jid)); save(jid);} } });
+document.addEventListener("submit", async e=>{
+  const f=e.target; if(!f.closest("#shell")) return; e.preventDefault();
+  const d=Object.fromEntries(new FormData(f));
+  if (f.id==="add-member"){ const email=d.email.trim().toLowerCase(); const {error}=await sb.from("workspace_members").insert({workspace_id:S.ws.id,email,role:d.role}); if(error) return toast(/duplicate/i.test(error.message)?"Už je členem":"Nepodařilo se přidat"); S.members.push({email,role:d.role}); render(); toast("Přidáno. Ať si založí účet s tímto e-mailem."); return; }
+  if (f.id==="new-ws"){ const id=crypto.randomUUID(); const {error}=await sb.from("workspaces").insert({id,name:d.name.trim(),kind:d.kind,owner_email:S.email}); if(error) return toast("Prostor se nepodařilo založit"); S.newWs=false; await loadWorkspaces(); S.view="jobs"; LS.set("crm.view","jobs"); await openWorkspace(id); toast("Prostor založen"); return; }
+  if (f.id==="chpw"){ const {error}=await sb.auth.updateUser({password:d.pw}); toast(error?"Heslo se nepodařilo změnit":"Heslo změněno"); if(!error) f.reset(); return; }
+  if (f.dataset.add==="quick-task"){
+    let jid=d.job;
+    if (jid==="__general"){ jid=[...S.jobs.entries()].find(([,j])=>j._general)?.[0]; if(!jid){ jid=uid(); S.jobs.set(jid,{...blank(K().types.includes("Ostatní")?"Ostatní":undefined), name:"Obecné úkoly", _general:true}); } }
+    S.jobs.get(jid).tasks.push({id:uid(),text:d.text.trim(),due:d.due||"",done:false}); save(jid); render(); $("#qt-text")?.focus(); return;
+  }
+  const jid=f.closest("[data-job]")?.dataset.job, job=jid&&S.jobs.get(jid); if(!job) return;
+  const k=f.dataset.add;
+  if (k==="task") job.tasks.push({id:uid(),text:d.text.trim(),due:d.due||"",done:false});
+  if (k==="event") job.events.push({id:uid(),title:d.title.trim(),date:d.date,time:d.time||"",dur:+d.dur||60});
+  if (k==="note") job.notes.push({id:uid(),text:d.text.trim(),ts:Date.now(),by:S.email});
+  if (k==="mail") job.mails.push({id:uid(),from:d.from.trim(),subject:d.subject.trim(),body:d.body,url:isUrl(d.url)?d.url.trim():"",ts:Date.now()});
+  if (k==="link") job.links.push({id:uid(),label:d.label.trim(),url:d.url.trim()});
+  save(jid); render();
+  const again={task:"#new-task",event:"#new-ev",note:"#new-note",mail:"#new-mail",link:"#new-link"}[k]; $(again)?.focus();
+});
+
+(async()=>{ const { data } = await sb.auth.getSession(); if(!data.session) { setAuthMode("in"); showAuth(); } })();
+})();
+</script>
+</body>
+</html>
